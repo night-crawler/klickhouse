@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, str::FromStr};
-
-use crate::Result;
+use std::collections::HashMap;
+use crate::{MaybeString, Result};
 use indexmap::IndexMap;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -177,7 +177,7 @@ impl Block {
         }
     }
 
-    pub(crate) async fn read<R: ClickhouseRead>(reader: &mut R, revision: u64) -> Result<Self> {
+    pub(crate) async fn read<R: ClickhouseRead>(reader: &mut R, revision: u64, map: &mut HashMap<u64, MaybeString>) -> Result<Self> {
         let info = if revision > 0 {
             BlockInfo::read(reader).await?
         } else {
@@ -196,7 +196,7 @@ impl Block {
             let type_name = reader.read_utf8_string().await?;
             let type_ = Type::from_str(&type_name)?;
             block.column_types.insert(name.clone(), type_.clone());
-            let mut state = DeserializerState {};
+            let mut state = DeserializerState {map};
             let row_data = if rows > 0 {
                 type_.deserialize_prefix(reader, &mut state).await?;
                 type_

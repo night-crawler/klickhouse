@@ -1,4 +1,5 @@
-use crate::Result;
+use std::collections::HashMap;
+use crate::{MaybeString, Result};
 use crate::{
     block::Block,
     io::ClickhouseRead,
@@ -51,11 +52,11 @@ impl<R: ClickhouseRead + 'static> InternalClientIn<R> {
     }
 
     #[cfg(feature = "compression")]
-    async fn decompress_data(&mut self, compression: CompressionMethod) -> Result<Block> {
+    async fn decompress_data(&mut self, compression: CompressionMethod, map: &mut HashMap<u64, MaybeString>) -> Result<Block> {
         let mut reader =
             crate::compression::DecompressionReader::new(compression, &mut self.reader);
-
-        let block = Block::read(&mut reader, self.server_hello.revision_version).await?;
+        
+        let block = Block::read(&mut reader, self.server_hello.revision_version, map).await?;
 
         Ok(block)
     }
@@ -67,12 +68,14 @@ impl<R: ClickhouseRead + 'static> InternalClientIn<R> {
 
     async fn receive_data(&mut self, compression: CompressionMethod) -> Result<ServerData> {
         let table_name = self.reader.read_utf8_string().await?;
+        
+        let mut map: HashMap<u64, MaybeString> = HashMap::new();
 
         let block = match compression {
             CompressionMethod::None => {
-                Block::read(&mut self.reader, self.server_hello.revision_version).await?
+                Block::read(&mut self.reader, self.server_hello.revision_version, &mut map).await?
             }
-            _ => self.decompress_data(compression).await?,
+            _ => self.decompress_data(compression, &mut map).await?,
         };
 
         Ok(ServerData { table_name, block })

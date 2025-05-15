@@ -1,6 +1,8 @@
 use std::future::Future;
 use std::{fmt::Display, str::FromStr};
-
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
 pub use chrono_tz::Tz;
 use futures_util::FutureExt;
 use uuid::Uuid;
@@ -1016,7 +1018,24 @@ impl Type {
     }
 }
 
-pub struct DeserializerState {}
+pub struct DeserializerState<'a> {
+    pub(crate) map: &'a mut HashMap<u64, MaybeString>
+}
+
+impl DeserializerState<'_> {
+    pub(crate) fn intern_bytes_as_maybe_string(&mut self, bytes: Vec<u8>) -> Value {
+        let mut hasher = DefaultHasher::new();
+        bytes.hash(&mut hasher);
+        let key = hasher.finish();
+
+        let s = self.map
+            .entry(key)
+            .or_insert_with(|| MaybeString::from(bytes))
+            .clone();
+        
+        Value::String(s)
+    }
+}
 
 pub struct SerializerState {}
 

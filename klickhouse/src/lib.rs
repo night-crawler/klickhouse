@@ -19,6 +19,9 @@ mod io;
 mod manager;
 #[cfg(feature = "refinery")]
 mod migrate;
+
+use std::num::NonZeroUsize;
+use std::sync::LazyLock;
 #[cfg(feature = "refinery")]
 pub use migrate::*;
 mod progress;
@@ -38,7 +41,7 @@ pub use manager::ConnectionManager;
 pub use uuid::Uuid;
 
 pub use indexmap::IndexMap;
-
+use lasso::{Capacity, ThreadedRodeo};
 #[cfg(feature = "derive")]
 /// Derive macro for the [Row] trait.
 ///
@@ -74,3 +77,7 @@ pub use types::{Type, Tz};
 pub use values::*;
 mod lock;
 pub use lock::ClickhouseLock;
+
+pub static ARENA: LazyLock<ThreadedRodeo> = LazyLock::new(|| {
+    ThreadedRodeo::with_capacity(Capacity::new(100_000, NonZeroUsize::new(1_000_000).unwrap()))
+});

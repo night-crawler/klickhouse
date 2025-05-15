@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::Cursor;
 
 use crate::Result;
@@ -25,7 +26,8 @@ async fn roundtrip_values(type_: &Type, values: &[Value]) -> Result<Vec<Value>> 
     }
     println!();
     let mut input = Cursor::new(output);
-    let mut state = DeserializerState {};
+    let mut map = HashMap::new();
+    let mut state = DeserializerState {map: &mut map};
     type_.deserialize_prefix(&mut input, &mut state).await?;
     let deserialized = type_
         .deserialize_column(&mut input, values.len(), &mut state)

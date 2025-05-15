@@ -49,6 +49,7 @@ tokio-rustls = { version = "0.26", optional = true }
 rustls-pki-types = { version = "1.4", optional = true }
 paste = "1.0"
 geo-types = { version = "0.7", optional = true}
+lasso = {version = "0.7.3", features = ["default", "serde", "serialize", "multi-threaded"]}
 
 [dev-dependencies]
 tokio = { version = "1.37", features = ["rt-multi-thread"] }
