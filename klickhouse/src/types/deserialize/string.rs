@@ -1,6 +1,6 @@
 use tokio::io::AsyncReadExt;
 
-use crate::{io::ClickhouseRead, values::Value, Result};
+use crate::{io::ClickhouseRead, values::Value, MaybeString, Result};
 
 use super::{Deserializer, DeserializerState, Type};
 
@@ -18,7 +18,7 @@ impl Deserializer for StringDeserializer {
             Type::String => {
                 let mut out = Vec::with_capacity(rows);
                 for _ in 0..rows {
-                    out.push(Value::String(reader.read_string().await?));
+                    out.push(Value::String(MaybeString::from(reader.read_string().await?)));
                 }
                 Ok(out)
             }
@@ -30,7 +30,7 @@ impl Deserializer for StringDeserializer {
                     reader.read_exact(&mut buf[..]).await?;
                     let first_null = buf.iter().position(|x| *x == 0).unwrap_or(buf.len());
                     buf.truncate(first_null);
-                    out.push(Value::String(buf));
+                    out.push(Value::String(MaybeString::from(buf)));
                 }
                 Ok(out)
             }

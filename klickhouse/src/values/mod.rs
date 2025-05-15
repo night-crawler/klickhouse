@@ -1,5 +1,6 @@
 use std::{borrow::Cow, fmt, hash::Hash};
-
+use std::string::FromUtf8Error;
+use std::sync::Arc;
 use chrono::{NaiveDate, SecondsFormat};
 use chrono_tz::Tz;
 
@@ -29,6 +30,80 @@ pub use ip::*;
 #[cfg(test)]
 mod tests;
 
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum MaybeString {
+    String(Arc<String>),
+    Bytes(Vec<u8>),
+}
+
+impl From<String> for MaybeString {
+    fn from(value: String) -> Self {
+        println!("useless conversion from string to maybe string: {value}");
+        MaybeString::String(Arc::new(value))
+    }
+}
+
+impl From<&str> for MaybeString {
+    fn from(value: &str) -> Self {
+        println!("useless conversion from &str to maybe string: {value}");
+        MaybeString::String(Arc::new(value.to_owned()))
+    }
+}
+
+impl TryFrom<MaybeString> for String {
+    type Error = FromUtf8Error;
+
+    fn try_from(value: MaybeString) -> std::result::Result<Self, Self::Error> {
+        println!("Useless conversion!!! {value:?}");
+        match value {
+            MaybeString::String(x) => {
+                match Arc::try_unwrap(x) {
+                    Ok(s) => Ok(s),
+                    Err(x) => Ok(x.as_ref().to_owned())
+                }
+            },
+            MaybeString::Bytes(b) => {
+                String::from_utf8(b)
+            }
+        }
+    }
+}
+
+impl From<Vec<u8>> for MaybeString {
+    fn from(value: Vec<u8>) -> Self {
+        match String::from_utf8(value) {
+            Ok(s) => MaybeString::String(Arc::new(s)),
+            Err(err) => {
+                MaybeString::Bytes(err.into_bytes())
+            }
+        }
+    }
+}
+
+impl From<MaybeString> for Vec<u8> {
+    fn from(value: MaybeString) -> Self {
+        println!("Bad conversion from string to bytes: {value:?}");
+        match value {
+            MaybeString::String(x) => match Arc::try_unwrap(x) {
+                Ok(s) => s.into_bytes(),
+                Err(x) => x.as_bytes().to_vec()
+            },
+            MaybeString::Bytes(x) => x
+        }
+    }
+}
+
+impl AsRef<[u8]> for MaybeString {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            MaybeString::String(x) => x.as_bytes(),
+            MaybeString::Bytes(x) => x.as_ref()
+        }
+    }
+}
+
 /// A raw Clickhouse value.
 /// Types are not strictly/completely preserved (i.e. types `String` and `FixedString` both are value `String`).
 /// Use this if you want dynamically typed queries.
@@ -57,7 +132,7 @@ pub enum Value {
     Decimal128(usize, i128),
     Decimal256(usize, i256),
 
-    String(Vec<u8>),
+    String(MaybeString),
 
     Uuid(::uuid::Uuid),
 
@@ -193,7 +268,7 @@ impl Eq for Value {}
 
 impl Value {
     pub fn string(value: impl Into<String>) -> Self {
-        Value::String(value.into().into_bytes())
+        Value::String(MaybeString::String(Arc::new(value.into())))
     }
 
     pub(crate) fn index_value(&self) -> usize {

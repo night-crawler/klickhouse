@@ -11,14 +11,7 @@ mod serialize;
 #[cfg(test)]
 mod tests;
 
-use crate::{
-    i256,
-    io::{ClickhouseRead, ClickhouseWrite},
-    protocol::MAX_STRING_SIZE,
-    u256,
-    values::Value,
-    Date, DateTime, DynDateTime64, Ipv4, Ipv6, KlickhouseError, Result,
-};
+use crate::{i256, io::{ClickhouseRead, ClickhouseWrite}, protocol::MAX_STRING_SIZE, u256, values::Value, Date, DateTime, DynDateTime64, Ipv4, Ipv6, KlickhouseError, MaybeString, Result};
 
 /// A raw Clickhouse type.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -163,8 +156,8 @@ impl Type {
             Type::Decimal64(s) => Value::Decimal64(*s, 0),
             Type::Decimal128(s) => Value::Decimal128(*s, 0),
             Type::Decimal256(s) => Value::Decimal256(*s, i256::default()),
-            Type::String => Value::String(vec![]),
-            Type::FixedString(_) => Value::String(vec![]),
+            Type::String => Value::String(MaybeString::Bytes(vec![])),
+            Type::FixedString(_) => Value::String(MaybeString::Bytes(vec![])),
             Type::Uuid => Value::Uuid(Uuid::from_u128(0)),
             Type::Date => Value::Date(Date(0)),
             Type::DateTime(tz) => Value::DateTime(DateTime(*tz, 0)),

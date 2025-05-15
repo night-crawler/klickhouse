@@ -81,7 +81,7 @@ impl Deserializer for LowCardinalityDeserializer {
                             global_dictionary = Some(new_index); // should this be append?
                         }
 
-                        // println!("index = {:?}", global_dictionary);
+                        println!("global_dictionary = {:?}", global_dictionary);
 
                         if has_additional_keys {
                             let key_count = reader.read_u64_le().await?;
@@ -92,7 +92,7 @@ impl Deserializer for LowCardinalityDeserializer {
                                     .await?,
                             )
                         }
-                        // println!("additional_keys = {:?}", additional_keys);
+                        println!("additional_keys = {:?}", additional_keys);
 
                         num_pending_rows = reader.read_u64_le().await? as usize;
                     }
