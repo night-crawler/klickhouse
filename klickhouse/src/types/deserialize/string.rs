@@ -18,11 +18,14 @@ impl Deserializer for StringDeserializer {
             Type::String => {
                 let mut out = Vec::with_capacity(rows);
                 for _ in 0..rows {
-                    out.push(state.intern_bytes_as_maybe_string(reader.read_string().await?));
+                    let data = reader.read_string().await?;
+                    let interned = state.intern_bytes_as_maybe_string(data); 
+                    out.push(interned);
                 }
                 Ok(out)
             }
             Type::FixedString(n) => {
+                println!("I am fixed!");
                 let mut out = Vec::with_capacity(rows);
                 for _ in 0..rows {
                     let mut buf = Vec::with_capacity(*n);

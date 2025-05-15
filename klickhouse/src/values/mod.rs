@@ -1,14 +1,10 @@
-use std::{borrow::Cow, fmt, hash::Hash};
-use std::string::FromUtf8Error;
-use std::sync::Arc;
 use chrono::{NaiveDate, SecondsFormat};
 use chrono_tz::Tz;
+use std::string::FromUtf8Error;
+use std::sync::Arc;
+use std::{borrow::Cow, fmt, hash::Hash};
 
-use crate::{
-    convert::{unexpected_type, FromSql, ToSql},
-    types::Type,
-    Result,
-};
+use crate::{convert::{unexpected_type, FromSql, ToSql}, types::Type, Result};
 
 mod bytes;
 mod clickhouse_uuid;

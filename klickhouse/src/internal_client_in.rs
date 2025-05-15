@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use ahash::HashMap;
 use crate::{MaybeString, Result};
 use crate::{
     block::Block,
@@ -66,16 +66,14 @@ impl<R: ClickhouseRead + 'static> InternalClientIn<R> {
         panic!("attempted to use compression when not compiled with `compression` feature in klickhouse");
     }
 
-    async fn receive_data(&mut self, compression: CompressionMethod) -> Result<ServerData> {
+    async fn receive_data(&mut self, compression: CompressionMethod, map: &mut HashMap<u64, MaybeString>) -> Result<ServerData> {
         let table_name = self.reader.read_utf8_string().await?;
         
-        let mut map: HashMap<u64, MaybeString> = HashMap::new();
-
         let block = match compression {
             CompressionMethod::None => {
-                Block::read(&mut self.reader, self.server_hello.revision_version, &mut map).await?
+                Block::read(&mut self.reader, self.server_hello.revision_version, map).await?
             }
-            _ => self.decompress_data(compression, &mut map).await?,
+            _ => self.decompress_data(compression, map).await?,
         };
 
         Ok(ServerData { table_name, block })
@@ -85,7 +83,7 @@ impl<R: ClickhouseRead + 'static> InternalClientIn<R> {
         unimplemented!()
     }
 
-    pub async fn receive_packet(&mut self) -> Result<ServerPacket> {
+    pub async fn receive_packet(&mut self, map: &mut HashMap<u64, MaybeString>) -> Result<ServerPacket> {
         let packet_id = ServerPacketId::from_u64(self.reader.read_var_uint().await?)?;
         let packet: Result<ServerPacket> = match packet_id {
             ServerPacketId::Hello => {
@@ -120,7 +118,7 @@ impl<R: ClickhouseRead + 'static> InternalClientIn<R> {
                 }))
             }
             ServerPacketId::Data => Ok(ServerPacket::Data(
-                self.receive_data(CompressionMethod::default()).await?,
+                self.receive_data(CompressionMethod::default(), map).await?,
             )),
             ServerPacketId::Exception => Ok(ServerPacket::Exception(self.read_exception().await?)),
             ServerPacketId::Progress => {
@@ -168,10 +166,10 @@ impl<R: ClickhouseRead + 'static> InternalClientIn<R> {
                 }))
             }
             ServerPacketId::Totals => Ok(ServerPacket::Totals(
-                self.receive_data(CompressionMethod::default()).await?,
+                self.receive_data(CompressionMethod::default(), map).await?,
             )),
             ServerPacketId::Extremes => Ok(ServerPacket::Extremes(
-                self.receive_data(CompressionMethod::default()).await?,
+                self.receive_data(CompressionMethod::default(), map).await?,
             )),
             ServerPacketId::TablesStatusResponse => {
                 let mut response = TablesStatusResponse {
@@ -241,8 +239,8 @@ impl<R: ClickhouseRead + 'static> InternalClientIn<R> {
         Ok(packet)
     }
 
-    pub async fn receive_hello(&mut self) -> Result<ServerHello> {
-        match self.receive_packet().await? {
+    pub async fn receive_hello(&mut self, map: &mut HashMap<u64, MaybeString>) -> Result<ServerHello> {
+        match self.receive_packet(map).await? {
             ServerPacket::Hello(hello) => Ok(hello),
             ServerPacket::Exception(e) => Err(e.emit()),
             packet => Err(KlickhouseError::ProtocolError(format!(

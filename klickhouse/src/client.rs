@@ -1,4 +1,5 @@
-use std::collections::VecDeque;
+use std::collections::{ VecDeque};
+use ahash::{HashMap, HashMapExt};
 
 use futures_util::{stream, Stream, StreamExt};
 use indexmap::IndexMap;
@@ -16,18 +17,9 @@ use tokio::{
 use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
-use crate::{
-    block::{Block, BlockInfo},
-    convert::Row,
-    internal_client_in::InternalClientIn,
-    internal_client_out::{
-        ClientHello, ClientInfo, InternalClientOut, Query, QueryKind, QueryProcessingStage,
-    },
-    io::{ClickhouseRead, ClickhouseWrite},
-    progress::Progress,
-    protocol::{self, ServerPacket},
-    KlickhouseError, ParsedQuery, RawRow, Result,
-};
+use crate::{block::{Block, BlockInfo}, convert::Row, internal_client_in::InternalClientIn, internal_client_out::{
+    ClientHello, ClientInfo, InternalClientOut, Query, QueryKind, QueryProcessingStage,
+}, io::{ClickhouseRead, ClickhouseWrite}, progress::Progress, protocol::{self, ServerPacket}, KlickhouseError, MaybeString, ParsedQuery, RawRow, Result};
 use log::*;
 
 // Maximum number of progress statuses to keep in memory. New statuses evict old ones.
@@ -179,7 +171,7 @@ impl<R: ClickhouseRead + 'static, W: ClickhouseWrite> InnerClient<R, W> {
         Ok(())
     }
 
-    async fn run_inner(mut self, mut input: Receiver<ClientRequest>) -> Result<()> {
+    async fn run_inner(mut self, mut input: Receiver<ClientRequest>, map: &mut HashMap<u64, MaybeString>) -> Result<()> {
         self.output
             .send_hello(ClientHello {
                 default_database: &self.options.default_database,
@@ -187,7 +179,7 @@ impl<R: ClickhouseRead + 'static, W: ClickhouseWrite> InnerClient<R, W> {
                 password: &self.options.password,
             })
             .await?;
-        let hello_response = self.input.receive_hello().await?;
+        let hello_response = self.input.receive_hello(map).await?;
         self.input.server_hello = hello_response.clone();
         self.output.server_hello = hello_response.clone();
 
@@ -199,7 +191,7 @@ impl<R: ClickhouseRead + 'static, W: ClickhouseWrite> InnerClient<R, W> {
                     }
                     self.handle_request(request.unwrap()).await?;
                 },
-                packet = self.input.receive_packet() => {
+                packet = self.input.receive_packet(map) => {
                     let packet = packet?;
                     self.receive_packet(packet).await?;
                 },
@@ -208,7 +200,8 @@ impl<R: ClickhouseRead + 'static, W: ClickhouseWrite> InnerClient<R, W> {
     }
 
     pub async fn run(self, input: Receiver<ClientRequest>) {
-        if let Err(e) = self.run_inner(input).await {
+        let mut map = HashMap::new();
+        if let Err(e) = self.run_inner(input, &mut map).await {
             error!("clickhouse client failed: {:?}", e);
         }
     }
