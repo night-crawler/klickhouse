@@ -10,6 +10,7 @@ use crate::{
     values::Value,
     KlickhouseError,
 };
+use crate::internal_client_in::Context;
 
 /// Metadata about a block
 #[derive(Debug, Clone)]
@@ -180,7 +181,7 @@ impl Block {
     pub(crate) async fn read<R: ClickhouseRead>(
         reader: &mut R,
         revision: u64,
-        map: &mut HashMap<u64, MaybeString>,
+        ctx: &mut Context
     ) -> Result<Self> {
         
         let info = if revision > 0 {
@@ -201,7 +202,7 @@ impl Block {
             let type_name = reader.read_utf8_string().await?;
             let type_ = Type::from_str(&type_name)?;
             block.column_types.insert(name.clone(), type_.clone());
-            let mut state = DeserializerState { map };
+            let mut state = DeserializerState { map: &mut ctx.map, buf: &mut ctx.buf };
             let row_data = if rows > 0 {
                 type_.deserialize_prefix(reader, &mut state).await?;
                 type_

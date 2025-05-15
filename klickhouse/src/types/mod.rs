@@ -1017,21 +1017,34 @@ impl Type {
     }
 }
 pub struct DeserializerState<'a> {
-    pub(crate) map: &'a mut HashMap<u64, MaybeString>
+    pub(crate) map: &'a mut HashMap<u64, MaybeString>,
+    pub(crate) buf: &'a mut Vec<u8>,
+}
+
+
+pub(crate) fn compute_hash(slice: &[u8]) -> u64 {
+    let mut hasher = ahash::AHasher::default();
+    slice.hash(&mut hasher);
+    hasher.finish()
 }
 
 impl DeserializerState<'_> {
     pub(crate) fn intern_bytes_as_maybe_string(&mut self, bytes: Vec<u8>) -> Value {
-        let mut hasher = ahash::AHasher::default();
-        bytes.hash(&mut hasher);
-        let key = hasher.finish();
+        let key = compute_hash(&bytes);
 
         let s = self.map
             .entry(key)
             .or_insert_with(|| MaybeString::from(bytes))
             .clone();
-        
+
         Value::String(s)
+    }
+    
+    pub(crate) fn contains(&self, bytes: &[u8]) -> bool {
+        let mut hasher = ahash::AHasher::default();
+        bytes.hash(&mut hasher);
+        let key = hasher.finish();
+        self.map.contains_key(&key)
     }
 }
 

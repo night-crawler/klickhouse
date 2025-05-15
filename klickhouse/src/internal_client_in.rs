@@ -19,6 +19,12 @@ use protocol::ServerPacketId;
 use tokio::io::AsyncReadExt;
 use uuid::Uuid;
 
+
+pub(crate) struct Context {
+   pub(crate) buf: Vec<u8>,
+   pub(crate) map: HashMap<u64, MaybeString>,
+}
+
 #[cfg(feature = "compression")]
 pub(crate) const MAX_COMPRESSION_SIZE: u32 = 0x40000000;
 
@@ -52,11 +58,11 @@ impl<R: ClickhouseRead + 'static> InternalClientIn<R> {
     }
 
     #[cfg(feature = "compression")]
-    async fn decompress_data(&mut self, compression: CompressionMethod, map: &mut HashMap<u64, MaybeString>) -> Result<Block> {
+    async fn decompress_data(&mut self, compression: CompressionMethod, ctx: &mut Context) -> Result<Block> {
         let mut reader =
             crate::compression::DecompressionReader::new(compression, &mut self.reader);
         
-        let block = Block::read(&mut reader, self.server_hello.revision_version, map).await?;
+        let block = Block::read(&mut reader, self.server_hello.revision_version, ctx).await?;
 
         Ok(block)
     }
@@ -66,14 +72,14 @@ impl<R: ClickhouseRead + 'static> InternalClientIn<R> {
         panic!("attempted to use compression when not compiled with `compression` feature in klickhouse");
     }
 
-    async fn receive_data(&mut self, compression: CompressionMethod, map: &mut HashMap<u64, MaybeString>) -> Result<ServerData> {
+    async fn receive_data(&mut self, compression: CompressionMethod, ctx: &mut Context) -> Result<ServerData> {
         let table_name = self.reader.read_utf8_string().await?;
         
         let block = match compression {
             CompressionMethod::None => {
-                Block::read(&mut self.reader, self.server_hello.revision_version, map).await?
+                Block::read(&mut self.reader, self.server_hello.revision_version, ctx).await?
             }
-            _ => self.decompress_data(compression, map).await?,
+            _ => self.decompress_data(compression, ctx).await?,
         };
 
         Ok(ServerData { table_name, block })
@@ -83,7 +89,7 @@ impl<R: ClickhouseRead + 'static> InternalClientIn<R> {
         unimplemented!()
     }
 
-    pub async fn receive_packet(&mut self, map: &mut HashMap<u64, MaybeString>) -> Result<ServerPacket> {
+    pub async fn receive_packet(&mut self, ctx: &mut Context) -> Result<ServerPacket> {
         let packet_id = ServerPacketId::from_u64(self.reader.read_var_uint().await?)?;
         let packet: Result<ServerPacket> = match packet_id {
             ServerPacketId::Hello => {
@@ -118,7 +124,7 @@ impl<R: ClickhouseRead + 'static> InternalClientIn<R> {
                 }))
             }
             ServerPacketId::Data => Ok(ServerPacket::Data(
-                self.receive_data(CompressionMethod::default(), map).await?,
+                self.receive_data(CompressionMethod::default(), ctx).await?,
             )),
             ServerPacketId::Exception => Ok(ServerPacket::Exception(self.read_exception().await?)),
             ServerPacketId::Progress => {
@@ -166,10 +172,10 @@ impl<R: ClickhouseRead + 'static> InternalClientIn<R> {
                 }))
             }
             ServerPacketId::Totals => Ok(ServerPacket::Totals(
-                self.receive_data(CompressionMethod::default(), map).await?,
+                self.receive_data(CompressionMethod::default(), ctx).await?,
             )),
             ServerPacketId::Extremes => Ok(ServerPacket::Extremes(
-                self.receive_data(CompressionMethod::default(), map).await?,
+                self.receive_data(CompressionMethod::default(), ctx).await?,
             )),
             ServerPacketId::TablesStatusResponse => {
                 let mut response = TablesStatusResponse {
@@ -239,8 +245,8 @@ impl<R: ClickhouseRead + 'static> InternalClientIn<R> {
         Ok(packet)
     }
 
-    pub async fn receive_hello(&mut self, map: &mut HashMap<u64, MaybeString>) -> Result<ServerHello> {
-        match self.receive_packet(map).await? {
+    pub async fn receive_hello(&mut self, ctx: &mut Context) -> Result<ServerHello> {
+        match self.receive_packet(ctx).await? {
             ServerPacket::Hello(hello) => Ok(hello),
             ServerPacket::Exception(e) => Err(e.emit()),
             packet => Err(KlickhouseError::ProtocolError(format!(

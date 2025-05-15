@@ -15,15 +15,7 @@ impl Deserializer for StringDeserializer {
         state: &mut DeserializerState<'_>,
     ) -> Result<Vec<Value>> {
         match type_ {
-            Type::String => {
-                let mut out = Vec::with_capacity(rows);
-                for _ in 0..rows {
-                    let data = reader.read_string().await?;
-                    let interned = state.intern_bytes_as_maybe_string(data); 
-                    out.push(interned);
-                }
-                Ok(out)
-            }
+            Type::String => reader.read_all_strings(state, rows).await,
             Type::FixedString(n) => {
                 println!("I am fixed!");
                 let mut out = Vec::with_capacity(rows);

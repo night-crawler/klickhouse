@@ -1,8 +1,9 @@
 use std::{
     any::TypeId,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap},
     hash::Hash,
 };
+use ahash::{HashMap, HashMapExt};
 use std::sync::Arc;
 use indexmap::IndexMap;
 use crate::MaybeString;

@@ -1,6 +1,6 @@
-use std::collections::{ VecDeque};
 use ahash::{HashMap, HashMapExt};
-
+use std::collections::VecDeque;
+use std::future;
 use futures_util::{stream, Stream, StreamExt};
 use indexmap::IndexMap;
 use protocol::CompressionMethod;
@@ -17,10 +17,21 @@ use tokio::{
 use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
-use crate::{block::{Block, BlockInfo}, convert::Row, internal_client_in::InternalClientIn, internal_client_out::{
-    ClientHello, ClientInfo, InternalClientOut, Query, QueryKind, QueryProcessingStage,
-}, io::{ClickhouseRead, ClickhouseWrite}, progress::Progress, protocol::{self, ServerPacket}, KlickhouseError, MaybeString, ParsedQuery, RawRow, Result};
+use crate::{
+    block::{Block, BlockInfo},
+    convert::Row,
+    internal_client_in::InternalClientIn,
+    internal_client_out::{
+        ClientHello, ClientInfo, InternalClientOut, Query, QueryKind, QueryProcessingStage,
+    },
+    io::{ClickhouseRead, ClickhouseWrite},
+    progress::Progress,
+    protocol::{self, ServerPacket},
+    KlickhouseError, MaybeString, ParsedQuery, RawRow, Result,
+};
 use log::*;
+use rayon::iter::ParallelBridge;
+use crate::internal_client_in::Context;
 
 // Maximum number of progress statuses to keep in memory. New statuses evict old ones.
 const PROGRESS_CAPACITY: usize = 100;
@@ -171,7 +182,11 @@ impl<R: ClickhouseRead + 'static, W: ClickhouseWrite> InnerClient<R, W> {
         Ok(())
     }
 
-    async fn run_inner(mut self, mut input: Receiver<ClientRequest>, map: &mut HashMap<u64, MaybeString>) -> Result<()> {
+    async fn run_inner(
+        mut self,
+        mut input: Receiver<ClientRequest>,
+        ctx: &mut Context,
+    ) -> Result<()> {
         self.output
             .send_hello(ClientHello {
                 default_database: &self.options.default_database,
@@ -179,7 +194,7 @@ impl<R: ClickhouseRead + 'static, W: ClickhouseWrite> InnerClient<R, W> {
                 password: &self.options.password,
             })
             .await?;
-        let hello_response = self.input.receive_hello(map).await?;
+        let hello_response = self.input.receive_hello(ctx).await?;
         self.input.server_hello = hello_response.clone();
         self.output.server_hello = hello_response.clone();
 
@@ -191,7 +206,7 @@ impl<R: ClickhouseRead + 'static, W: ClickhouseWrite> InnerClient<R, W> {
                     }
                     self.handle_request(request.unwrap()).await?;
                 },
-                packet = self.input.receive_packet(map) => {
+                packet = self.input.receive_packet(ctx) => {
                     let packet = packet?;
                     self.receive_packet(packet).await?;
                 },
@@ -200,8 +215,12 @@ impl<R: ClickhouseRead + 'static, W: ClickhouseWrite> InnerClient<R, W> {
     }
 
     pub async fn run(self, input: Receiver<ClientRequest>) {
-        let mut map = HashMap::new();
-        if let Err(e) = self.run_inner(input, &mut map).await {
+        println!("!!! clickhouse client started!;");
+        let mut ctx = Context {
+            buf: Vec::with_capacity(1024 * 32),
+            map: Default::default(),
+        };
+        if let Err(e) = self.run_inner(input, &mut ctx).await {
             error!("clickhouse client failed: {:?}", e);
         }
     }
@@ -463,25 +482,30 @@ impl Client {
 
     /// Runs a query against Clickhouse, returning a stream of deserialized rows.
     /// Note that no rows are returned until Clickhouse sends a full block (but it usually sends more than one block).
-    pub async fn query<T: Row>(
+    pub async fn query<T: Row + Send>(
         &self,
         query: impl TryInto<ParsedQuery, Error = KlickhouseError>,
     ) -> Result<impl Stream<Item = Result<T>>> {
+        use rayon::iter::ParallelIterator;
+
         let raw = self.query_raw(query).await?;
-        Ok(raw.flat_map(|block| match block {
-            Ok(mut block) => stream::iter(
-                block
-                    .take_iter_rows()
-                    .filter(|x| !x.is_empty())
-                    .map(|m| T::deserialize_row(m))
-                    .collect::<Vec<_>>(),
-            ),
-            Err(e) => stream::iter(vec![Err(e)]),
-        }))
+            Ok(raw.flat_map(|block| match block {
+                Ok(mut block) => {
+                    let rows = block
+                        .take_iter_rows()
+                        .filter(|row| !row.is_empty())
+                        .par_bridge()
+                        .map(|m| T::deserialize_row(m))
+                        .collect::<Vec<_>>();
+      
+                    stream::iter(rows)            
+                }
+                Err(e) => stream::iter(vec![Err(e)]),
+            }))
     }
 
     /// Same as `query`, but collects all rows into a `Vec`
-    pub async fn query_collect<T: Row>(
+    pub async fn query_collect<T: Row + Send>(
         &self,
         query: impl TryInto<ParsedQuery, Error = KlickhouseError>,
     ) -> Result<Vec<T>> {
@@ -494,7 +518,7 @@ impl Client {
     }
 
     /// Same as `query`, but returns the first row and discards the rest.
-    pub async fn query_one<T: Row>(
+    pub async fn query_one<T: Row + Send>(
         &self,
         query: impl TryInto<ParsedQuery, Error = KlickhouseError>,
     ) -> Result<T> {
@@ -506,7 +530,7 @@ impl Client {
     }
 
     /// Same as `query`, but returns the first row, if any, and discards the rest.
-    pub async fn query_opt<T: Row>(
+    pub async fn query_opt<T: Row + Send>(
         &self,
         query: impl TryInto<ParsedQuery, Error = KlickhouseError>,
     ) -> Result<Option<T>> {
