@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::hash::Hash;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::{KlickhouseError, MaybeString, Result, Value};
@@ -10,11 +9,11 @@ use crate::types::{compute_hash, DeserializerState};
 pub trait ClickhouseRead: AsyncRead + Unpin + Send + Sync {
     fn read_var_uint(&mut self) -> impl Future<Output = Result<u64>> + Send;
 
-    fn read_string(&mut self) -> impl Future<Output = Result<Vec<u8>>> + Send;
+    fn read_string(&mut self, state: &mut DeserializerState<'_>) -> impl Future<Output = Result<Vec<u8>>> + Send;
 
-    fn read_utf8_string(&mut self) -> impl Future<Output = Result<String>> + Send {
+    fn read_utf8_string(&mut self, state: &mut DeserializerState<'_>) -> impl Future<Output = Result<String>> + Send {
         async { 
-            Ok(String::from_utf8(self.read_string().await?)?) 
+            Ok(String::from_utf8(self.read_string(state).await?)?) 
         }
     }
     fn read_all_strings(&mut self, state: &mut DeserializerState<'_>, rows: usize) -> impl Future<Output=Result<Vec<Value>>> + Send;
@@ -34,7 +33,7 @@ impl<T: AsyncRead + Unpin + Send + Sync> ClickhouseRead for T {
         Ok(out)
     }
 
-    async fn read_string(&mut self) -> Result<Vec<u8>> {
+    async fn read_string(&mut self, _state: &mut DeserializerState<'_>) -> Result<Vec<u8>> {
         let len = self.read_var_uint().await?;
         if len as usize > MAX_STRING_SIZE {
             return Err(KlickhouseError::ProtocolError(format!(

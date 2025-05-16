@@ -1,6 +1,4 @@
-use ahash::{HashMap, HashMapExt};
 use std::collections::VecDeque;
-use std::future;
 use futures_util::{stream, Stream, StreamExt};
 use indexmap::IndexMap;
 use protocol::CompressionMethod;
@@ -27,7 +25,7 @@ use crate::{
     io::{ClickhouseRead, ClickhouseWrite},
     progress::Progress,
     protocol::{self, ServerPacket},
-    KlickhouseError, MaybeString, ParsedQuery, RawRow, Result,
+    KlickhouseError,  ParsedQuery, RawRow, Result,
 };
 use log::*;
 use rayon::iter::ParallelBridge;
@@ -219,6 +217,7 @@ impl<R: ClickhouseRead + 'static, W: ClickhouseWrite> InnerClient<R, W> {
         let mut ctx = Context {
             buf: Vec::with_capacity(1024 * 32),
             map: Default::default(),
+            comp: Vec::with_capacity(1024 * 32),
         };
         if let Err(e) = self.run_inner(input, &mut ctx).await {
             error!("clickhouse client failed: {:?}", e);

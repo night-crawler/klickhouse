@@ -13,6 +13,7 @@ mod serialize;
 mod tests;
 
 use crate::{i256, io::{ClickhouseRead, ClickhouseWrite}, protocol::MAX_STRING_SIZE, u256, values::Value, Date, DateTime, DynDateTime64, Ipv4, Ipv6, KlickhouseError, MaybeString, Result};
+use crate::internal_client_in::Context;
 
 /// A raw Clickhouse type.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -1019,6 +1020,17 @@ impl Type {
 pub struct DeserializerState<'a> {
     pub(crate) map: &'a mut HashMap<u64, MaybeString>,
     pub(crate) buf: &'a mut Vec<u8>,
+    pub(crate) comp: Option<&'a mut Vec<u8>>,
+}
+
+impl <'a> From<&'a mut Context> for DeserializerState<'a> {
+    fn from(value: &'a mut Context) -> Self {
+        Self {
+            map: &mut value.map,
+            buf: &mut value.buf,
+            comp: Some(&mut value.comp),
+        }
+    }
 }
 
 
@@ -1039,7 +1051,7 @@ impl DeserializerState<'_> {
 
         Value::String(s)
     }
-    
+
     pub(crate) fn contains(&self, bytes: &[u8]) -> bool {
         let mut hasher = ahash::AHasher::default();
         bytes.hash(&mut hasher);

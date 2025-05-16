@@ -1,16 +1,15 @@
-use crate::{MaybeString, Result};
+use crate::Result;
 use indexmap::IndexMap;
 use std::{collections::VecDeque, str::FromStr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use ahash::HashMap;
 
+use crate::internal_client_in::Context;
 use crate::{
     io::{ClickhouseRead, ClickhouseWrite},
     types::{DeserializerState, SerializerState, Type},
     values::Value,
     KlickhouseError,
 };
-use crate::internal_client_in::Context;
 
 /// Metadata about a block
 #[derive(Debug, Clone)]
@@ -181,7 +180,7 @@ impl Block {
     pub(crate) async fn read<R: ClickhouseRead>(
         reader: &mut R,
         revision: u64,
-        ctx: &mut Context
+        mut state: &mut DeserializerState<'_>
     ) -> Result<Self> {
         
         let info = if revision > 0 {
@@ -198,11 +197,10 @@ impl Block {
             column_data: IndexMap::new(),
         };
         for _ in 0..columns {
-            let name = reader.read_utf8_string().await?;
-            let type_name = reader.read_utf8_string().await?;
+            let name = reader.read_utf8_string(state).await?;
+            let type_name = reader.read_utf8_string(state).await?;
             let type_ = Type::from_str(&type_name)?;
             block.column_types.insert(name.clone(), type_.clone());
-            let mut state = DeserializerState { map: &mut ctx.map, buf: &mut ctx.buf };
             let row_data = if rows > 0 {
                 type_.deserialize_prefix(reader, &mut state).await?;
                 type_
